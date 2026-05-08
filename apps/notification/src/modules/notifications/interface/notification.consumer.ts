@@ -1,75 +1,94 @@
-import { AmqpConnection, Nack, RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { AmqpConnection, RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
+import { Inject, Injectable } from '@nestjs/common';
 import type { ConsumeMessage } from 'amqplib';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import {
+  HEADER_ORIGINAL_ERROR,
   HEADER_RETRY_COUNT,
-  NOTIFICATION_DLQ,
+  NOTIFICATION_DEAD_ROUTING_KEY,
   NOTIFICATION_EXCHANGE,
   NOTIFICATION_QUEUE,
+  NOTIFICATION_RETRY_ROUTING_KEY,
   NOTIFICATION_ROUTING_KEY,
   NotificationEventEnvelope,
 } from '@app/contracts';
 import { RABBITMQ_CONFIG, RabbitMQConnectionConfig } from '@app/rabbitmq';
 import { HandleNotificationUseCase } from '../application/handle-notification.use-case';
+import { PermanentNotificationError } from '../application/errors';
 
 @Injectable()
 export class NotificationConsumer {
-  private readonly logger = new Logger(NotificationConsumer.name);
-
   constructor(
     private readonly handler: HandleNotificationUseCase,
     private readonly amqp: AmqpConnection,
     @Inject(RABBITMQ_CONFIG) private readonly config: RabbitMQConnectionConfig,
+    @InjectPinoLogger(NotificationConsumer.name)
+    private readonly logger: PinoLogger,
   ) {}
 
   @RabbitSubscribe({
     exchange: NOTIFICATION_EXCHANGE,
     routingKey: NOTIFICATION_ROUTING_KEY,
     queue: NOTIFICATION_QUEUE,
-    queueOptions: {
-      durable: true,
-      deadLetterExchange: NOTIFICATION_EXCHANGE,
-      deadLetterRoutingKey: 'notification.retry',
-    },
   })
   async handle(
     envelope: NotificationEventEnvelope,
     rawMessage: ConsumeMessage,
-  ): Promise<Nack | undefined> {
+  ): Promise<void> {
     const retryCount = this.readRetryCount(rawMessage);
 
     try {
       await this.handler.execute(envelope);
-      return undefined;
+      this.logger.info(
+        { eventId: envelope.eventId, attempt: retryCount },
+        'notification handled',
+      );
     } catch (err) {
+      const error = err as Error;
       const nextAttempt = retryCount + 1;
+      const permanent = err instanceof PermanentNotificationError;
+      const exhausted = nextAttempt > this.config.maxRetries;
 
-      if (nextAttempt > this.config.maxRetries) {
+      if (permanent || exhausted) {
         this.logger.error(
-          { eventId: envelope.eventId, attempts: nextAttempt, err: (err as Error).message },
-          'max retries exceeded, sending to DLQ',
-        );
-        await this.amqp.publish(NOTIFICATION_EXCHANGE, 'notification.dead', envelope, {
-          persistent: true,
-          headers: {
-            [HEADER_RETRY_COUNT]: nextAttempt,
-            'x-original-error': (err as Error).message.slice(0, 500),
+          {
+            eventId: envelope.eventId,
+            attempts: nextAttempt,
+            permanent,
+            err: error.message,
           },
-        });
-        return new Nack(false);
+          'sending event to DLQ',
+        );
+        await this.amqp.publish(
+          NOTIFICATION_EXCHANGE,
+          NOTIFICATION_DEAD_ROUTING_KEY,
+          envelope,
+          {
+            persistent: true,
+            messageId: envelope.eventId,
+            headers: {
+              [HEADER_RETRY_COUNT]: nextAttempt,
+              [HEADER_ORIGINAL_ERROR]: error.message.slice(0, 500),
+            },
+          },
+        );
+        return;
       }
 
       this.logger.warn(
-        { eventId: envelope.eventId, attempt: nextAttempt, err: (err as Error).message },
+        { eventId: envelope.eventId, attempt: nextAttempt, err: error.message },
         'handler failed, scheduling retry',
       );
-      // Republish into the retry queue with incremented counter; original is dropped.
-      await this.amqp.publish(NOTIFICATION_EXCHANGE, 'notification.retry', envelope, {
-        persistent: true,
-        headers: { [HEADER_RETRY_COUNT]: nextAttempt },
-        expiration: String(this.config.retryTtlMs),
-      });
-      return new Nack(false);
+      await this.amqp.publish(
+        NOTIFICATION_EXCHANGE,
+        NOTIFICATION_RETRY_ROUTING_KEY,
+        envelope,
+        {
+          persistent: true,
+          messageId: envelope.eventId,
+          headers: { [HEADER_RETRY_COUNT]: nextAttempt },
+        },
+      );
     }
   }
 
@@ -79,6 +98,4 @@ export class NotificationConsumer {
     const parsed = typeof value === 'number' ? value : Number(value ?? 0);
     return Number.isFinite(parsed) ? parsed : 0;
   }
-
-  static readonly DLQ_NAME = NOTIFICATION_DLQ;
 }

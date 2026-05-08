@@ -8,6 +8,7 @@ import { ProducerAppModule } from './producer-app.module';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(ProducerAppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+  app.enableShutdownHooks();
 
   app.useGlobalPipes(
     new ValidationPipe({

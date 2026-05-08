@@ -1,6 +1,17 @@
 export const IDEMPOTENCY_STORE = Symbol('IDEMPOTENCY_STORE');
 
+export type IdempotencyState = 'fresh' | 'pending' | 'done';
+
 export interface IdempotencyStore {
-  /** Returns true if the key was registered for the first time. */
-  registerOnce(key: string): Promise<boolean>;
+  /**
+   * Atomically transitions a key from absent to "pending".
+   * Returns 'fresh' on first acquisition, otherwise the current state.
+   */
+  acquire(key: string): Promise<IdempotencyState>;
+
+  /** Marks the key as permanently processed. */
+  commit(key: string): Promise<void>;
+
+  /** Releases a "pending" tombstone so the next delivery can retry. */
+  release(key: string): Promise<void>;
 }

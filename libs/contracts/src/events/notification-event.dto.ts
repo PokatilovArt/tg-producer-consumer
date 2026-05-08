@@ -2,13 +2,17 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { NotificationEventType } from './notification-event.contract';
+import { NotificationEventType, TelegramParseMode } from './notification-event.contract';
+
+const PARSE_MODES: TelegramParseMode[] = ['Markdown', 'MarkdownV2', 'HTML'];
 
 export class TelegramMessagePayloadDto {
   @ApiPropertyOptional({
@@ -19,26 +23,40 @@ export class TelegramMessagePayloadDto {
   @IsString()
   chatId?: string;
 
-  @ApiPropertyOptional({
-    description: 'Optional bold title prepended to the message.',
-    example: 'Order created',
-  })
+  @ApiPropertyOptional({ description: 'Optional title prepended to the message.' })
   @IsOptional()
   @IsString()
   @MaxLength(256)
   title?: string;
 
   @ApiProperty({
-    description: 'Message body sent to Telegram. Markdown supported.',
-    example: 'New order *#1234* received from John',
+    description: 'Message body sent to Telegram.',
+    example: 'New order #1234 received from John',
   })
   @IsString()
   @IsNotEmpty()
   @MaxLength(4000)
   text!: string;
+
+  @ApiPropertyOptional({
+    description: 'Telegram parse mode. Omit for plain text (default).',
+    enum: PARSE_MODES,
+  })
+  @IsOptional()
+  @IsIn(PARSE_MODES)
+  parseMode?: TelegramParseMode;
 }
 
 export class CreateNotificationEventDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional client-supplied UUID for end-to-end idempotency. Generated if absent.',
+    example: 'b6f1d2f3-2a30-4f4a-b2c0-7d4ec0e9b5f1',
+  })
+  @IsOptional()
+  @IsUUID(4)
+  eventId?: string;
+
   @ApiProperty({
     enum: NotificationEventType,
     description: 'Event type used to route to the appropriate handler.',

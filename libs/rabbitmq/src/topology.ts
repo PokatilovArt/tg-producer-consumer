@@ -1,4 +1,5 @@
 import {
+  NOTIFICATION_DEAD_ROUTING_KEY,
   NOTIFICATION_DLQ,
   NOTIFICATION_EXCHANGE,
   NOTIFICATION_QUEUE,
@@ -22,13 +23,13 @@ export async function setupNotificationTopology(
   await channel.assertExchange(NOTIFICATION_EXCHANGE, 'topic', { durable: true });
 
   await channel.assertQueue(NOTIFICATION_DLQ, { durable: true });
-  await channel.bindQueue(NOTIFICATION_DLQ, NOTIFICATION_EXCHANGE, 'notification.dead');
+  await channel.bindQueue(
+    NOTIFICATION_DLQ,
+    NOTIFICATION_EXCHANGE,
+    NOTIFICATION_DEAD_ROUTING_KEY,
+  );
 
-  await channel.assertQueue(NOTIFICATION_QUEUE, {
-    durable: true,
-    deadLetterExchange: NOTIFICATION_EXCHANGE,
-    deadLetterRoutingKey: NOTIFICATION_RETRY_ROUTING_KEY,
-  });
+  await channel.assertQueue(NOTIFICATION_QUEUE, { durable: true });
   await channel.bindQueue(NOTIFICATION_QUEUE, NOTIFICATION_EXCHANGE, NOTIFICATION_ROUTING_KEY);
 
   await channel.assertQueue(NOTIFICATION_RETRY_QUEUE, {

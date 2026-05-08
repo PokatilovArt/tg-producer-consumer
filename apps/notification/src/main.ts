@@ -8,6 +8,15 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
+
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    app.get(Logger).log(`received ${signal}, shutting down`);
+    await app.close();
+    process.exit(0);
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 void bootstrap();

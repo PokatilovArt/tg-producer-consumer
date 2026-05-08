@@ -1,29 +1,42 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CreateNotificationEventDto,
   NotificationEventEnvelope,
   PublishedEventResponseDto,
 } from '@app/contracts';
-import { EVENT_PUBLISHER, EventPublisher } from './event-publisher.port';
+import {
+  OUTBOX_REPOSITORY,
+  OutboxRepository,
+} from '../../outbox/application/outbox-repository.port';
 
 @Injectable()
 export class PublishEventUseCase {
-  private readonly logger = new Logger(PublishEventUseCase.name);
-
-  constructor(@Inject(EVENT_PUBLISHER) private readonly publisher: EventPublisher) {}
+  constructor(
+    @Inject(OUTBOX_REPOSITORY) private readonly outbox: OutboxRepository,
+    @InjectPinoLogger(PublishEventUseCase.name)
+    private readonly logger: PinoLogger,
+  ) {}
 
   async execute(dto: CreateNotificationEventDto): Promise<PublishedEventResponseDto> {
     const envelope: NotificationEventEnvelope = {
-      eventId: uuidv4(),
+      eventId: dto.eventId ?? uuidv4(),
       type: dto.type,
       occurredAt: new Date().toISOString(),
       payload: dto.payload,
     };
 
-    await this.publisher.publish(envelope);
+    const enqueued = await this.outbox.enqueue(envelope);
 
-    this.logger.log({ eventId: envelope.eventId, type: envelope.type }, 'event published');
+    this.logger.info(
+      {
+        eventId: envelope.eventId,
+        type: envelope.type,
+        deduplicated: !enqueued,
+      },
+      enqueued ? 'event enqueued to outbox' : 'duplicate event ignored',
+    );
 
     return {
       eventId: envelope.eventId,

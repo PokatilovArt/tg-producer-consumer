@@ -2,6 +2,8 @@ import { RabbitMQModule as GolevelupRabbitMQModule } from '@golevelup/nestjs-rab
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
+  NOTIFICATION_DEAD_ROUTING_KEY,
+  NOTIFICATION_DLQ,
   NOTIFICATION_EXCHANGE,
   NOTIFICATION_QUEUE,
   NOTIFICATION_RETRY_QUEUE,
@@ -24,7 +26,9 @@ export class RabbitMQModule {
           imports: [ConfigModule],
           inject: [ConfigService],
           useFactory: (config: ConfigService) => {
-            const retryTtlMs = config.get<number>('RABBITMQ_RETRY_TTL_MS', 10_000);
+            const retryTtlMs = Number(
+              config.get<number>('RABBITMQ_RETRY_TTL_MS', 10_000),
+            );
             return {
               uri: config.getOrThrow<string>('RABBITMQ_URL'),
               connectionInitOptions: { wait: true, timeout: 30_000 },
@@ -38,11 +42,7 @@ export class RabbitMQModule {
                   exchange: NOTIFICATION_EXCHANGE,
                   routingKey: NOTIFICATION_ROUTING_KEY,
                   createQueueIfNotExists: true,
-                  options: {
-                    durable: true,
-                    deadLetterExchange: NOTIFICATION_EXCHANGE,
-                    deadLetterRoutingKey: NOTIFICATION_RETRY_ROUTING_KEY,
-                  },
+                  options: { durable: true },
                 },
                 {
                   name: NOTIFICATION_RETRY_QUEUE,
@@ -56,9 +56,16 @@ export class RabbitMQModule {
                     deadLetterRoutingKey: NOTIFICATION_ROUTING_KEY,
                   },
                 },
+                {
+                  name: NOTIFICATION_DLQ,
+                  exchange: NOTIFICATION_EXCHANGE,
+                  routingKey: NOTIFICATION_DEAD_ROUTING_KEY,
+                  createQueueIfNotExists: true,
+                  options: { durable: true },
+                },
               ],
               channels: {
-                default: { prefetchCount: 10, default: true },
+                default: { prefetchCount: 10, default: true, confirm: true },
               },
             };
           },
@@ -70,9 +77,9 @@ export class RabbitMQModule {
           inject: [ConfigService],
           useFactory: (config: ConfigService): RabbitMQConnectionConfig => ({
             url: config.getOrThrow<string>('RABBITMQ_URL'),
-            exchange: config.get<string>('RABBITMQ_EXCHANGE', NOTIFICATION_EXCHANGE),
-            queue: config.get<string>('RABBITMQ_QUEUE', NOTIFICATION_QUEUE),
-            routingKey: config.get<string>('RABBITMQ_ROUTING_KEY', NOTIFICATION_ROUTING_KEY),
+            exchange: NOTIFICATION_EXCHANGE,
+            queue: NOTIFICATION_QUEUE,
+            routingKey: NOTIFICATION_ROUTING_KEY,
             retryTtlMs: Number(config.get<number>('RABBITMQ_RETRY_TTL_MS', 10_000)),
             maxRetries: Number(config.get<number>('RABBITMQ_MAX_RETRIES', 5)),
           }),

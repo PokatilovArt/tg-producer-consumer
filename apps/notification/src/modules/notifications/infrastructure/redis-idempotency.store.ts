@@ -1,25 +1,66 @@
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import Redis from 'ioredis';
-import { IdempotencyStore } from '../application/idempotency-store.port';
+import {
+  IdempotencyState,
+  IdempotencyStore,
+} from '../application/idempotency-store.port';
+import { REDIS_CLIENT } from './redis.provider';
 
+export interface IdempotencyConfig {
+  doneTtlSeconds: number;
+  pendingTtlSeconds: number;
+}
+
+export const IDEMPOTENCY_CONFIG = Symbol('IDEMPOTENCY_CONFIG');
+
+@Injectable()
 export class RedisIdempotencyStore implements IdempotencyStore, OnModuleDestroy {
-  private readonly logger = new Logger(RedisIdempotencyStore.name);
-  private readonly redis: Redis;
-
   constructor(
-    redisUrl: string,
-    private readonly ttlSeconds: number,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(IDEMPOTENCY_CONFIG) private readonly config: IdempotencyConfig,
+    @InjectPinoLogger(RedisIdempotencyStore.name)
+    private readonly logger: PinoLogger,
   ) {
-    this.redis = new Redis(redisUrl, { maxRetriesPerRequest: 3, lazyConnect: false });
-    this.redis.on('error', (err) => this.logger.error(err.message, 'redis error'));
+    this.redis.on('error', (err) =>
+      this.logger.error({ err: err.message }, 'redis error'),
+    );
   }
 
-  async registerOnce(key: string): Promise<boolean> {
-    const result = await this.redis.set(`idem:${key}`, '1', 'EX', this.ttlSeconds, 'NX');
-    return result === 'OK';
+  async acquire(key: string): Promise<IdempotencyState> {
+    const result = await this.redis.set(
+      this.redisKey(key),
+      'pending',
+      'EX',
+      this.config.pendingTtlSeconds,
+      'NX',
+    );
+    if (result === 'OK') return 'fresh';
+
+    const current = await this.redis.get(this.redisKey(key));
+    return current === 'done' ? 'done' : 'pending';
+  }
+
+  async commit(key: string): Promise<void> {
+    await this.redis.set(
+      this.redisKey(key),
+      'done',
+      'EX',
+      this.config.doneTtlSeconds,
+    );
+  }
+
+  async release(key: string): Promise<void> {
+    await this.redis.del(this.redisKey(key));
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.redis.quit();
+    if (this.redis.status === 'ready' || this.redis.status === 'connecting') {
+      await this.redis.quit();
+    }
+  }
+
+  private redisKey(key: string): string {
+    return `idem:${key}`;
   }
 }
