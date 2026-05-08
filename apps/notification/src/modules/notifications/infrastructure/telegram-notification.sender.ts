@@ -8,6 +8,7 @@ import {
 } from '@app/contracts';
 import { NotificationSender } from '../application/notification-sender.port';
 import { PermanentNotificationError } from '../application/errors';
+import { TELEGRAM, TELEGRAM_RETRYABLE_STATUS } from '../notifications.constants';
 
 export const TELEGRAM_CONFIG = Symbol('TELEGRAM_CONFIG');
 
@@ -28,7 +29,7 @@ export class TelegramNotificationSender implements NotificationSender {
   ) {
     this.http = axios.create({
       baseURL: `https://api.telegram.org/bot${config.botToken}`,
-      timeout: 10_000,
+      timeout: TELEGRAM.httpTimeoutMs,
     });
   }
 
@@ -65,13 +66,20 @@ export class TelegramNotificationSender implements NotificationSender {
 
       this.logger.warn({ eventId, status, description }, 'telegram api error');
 
-      // Retryable: network errors, 5xx, 429 rate limit.
-      if (status === undefined || status >= 500 || status === 429) {
+      if (this.isRetryable(status)) {
         return new Error(message);
       }
-      // 4xx (other than 429) is a client/poison error — don't retry.
       return new PermanentNotificationError(message);
     }
     return err instanceof Error ? err : new Error(String(err));
+  }
+
+  /** Network errors, 5xx, and 429 are transient and worth a redelivery. */
+  private isRetryable(status: number | undefined): boolean {
+    return (
+      status === undefined ||
+      status >= TELEGRAM_RETRYABLE_STATUS.serverErrorMin ||
+      status === TELEGRAM_RETRYABLE_STATUS.rateLimited
+    );
   }
 }

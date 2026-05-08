@@ -9,8 +9,14 @@ import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { EVENT_PUBLISHER, EventPublisher } from '../../events/application/event-publisher.port';
 import {
   OUTBOX_REPOSITORY,
+  OutboxRecord,
   OutboxRepository,
 } from './outbox-repository.port';
+import {
+  OUTBOX_BACKOFF,
+  OUTBOX_DEFAULTS,
+  RELAY_DRAIN_POLL_MS,
+} from '../outbox.constants';
 
 @Injectable()
 export class OutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
@@ -30,11 +36,19 @@ export class OutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
     private readonly logger: PinoLogger,
   ) {
     this.intervalMs = Number(
-      this.config.get<number>('OUTBOX_POLL_INTERVAL_MS', 1_000),
+      this.config.get<number>(
+        'OUTBOX_POLL_INTERVAL_MS',
+        OUTBOX_DEFAULTS.pollIntervalMs,
+      ),
     );
-    this.batchSize = Number(this.config.get<number>('OUTBOX_BATCH_SIZE', 50));
+    this.batchSize = Number(
+      this.config.get<number>('OUTBOX_BATCH_SIZE', OUTBOX_DEFAULTS.batchSize),
+    );
     this.maxAttempts = Number(
-      this.config.get<number>('OUTBOX_MAX_ATTEMPTS', 10),
+      this.config.get<number>(
+        'OUTBOX_MAX_ATTEMPTS',
+        OUTBOX_DEFAULTS.maxAttempts,
+      ),
     );
   }
 
@@ -46,9 +60,8 @@ export class OutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
-    // Let an in-flight tick finish
     while (this.running) {
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, RELAY_DRAIN_POLL_MS));
     }
   }
 
@@ -66,22 +79,7 @@ export class OutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
               'outbox row published',
             );
           } catch (err) {
-            const message = (err as Error).message;
-            const nextAttempt = record.attempts + 1;
-            const giveUp = nextAttempt >= this.maxAttempts;
-            const delay = giveUp
-              ? 24 * 60 * 60 * 1_000 // park for a day; ops can re-queue manually
-              : Math.min(60_000, 500 * 2 ** record.attempts);
-            await ctx.markFailed(record.id, message, delay);
-            this.logger[giveUp ? 'error' : 'warn'](
-              {
-                eventId: record.eventId,
-                attempts: nextAttempt,
-                err: message,
-                giveUp,
-              },
-              'outbox publish failed',
-            );
+            await this.handleFailure(record, err as Error, ctx);
           }
         }
       });
@@ -93,5 +91,30 @@ export class OutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.running = false;
     }
+  }
+
+  private async handleFailure(
+    record: OutboxRecord,
+    err: Error,
+    ctx: { markFailed: (id: string, err: string, delayMs: number) => Promise<void> },
+  ): Promise<void> {
+    const nextAttempt = record.attempts + 1;
+    const giveUp = nextAttempt >= this.maxAttempts;
+    const delay = giveUp
+      ? OUTBOX_BACKOFF.parkDelayMs
+      : Math.min(
+          OUTBOX_BACKOFF.maxDelayMs,
+          OUTBOX_BACKOFF.baseDelayMs * 2 ** record.attempts,
+        );
+    await ctx.markFailed(record.id, err.message, delay);
+    this.logger[giveUp ? 'error' : 'warn'](
+      {
+        eventId: record.eventId,
+        attempts: nextAttempt,
+        err: err.message,
+        giveUp,
+      },
+      'outbox publish failed',
+    );
   }
 }

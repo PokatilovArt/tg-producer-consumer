@@ -15,6 +15,7 @@ import {
 import { RABBITMQ_CONFIG, RabbitMQConnectionConfig } from '@app/rabbitmq';
 import { HandleNotificationUseCase } from '../application/handle-notification.use-case';
 import { PermanentNotificationError } from '../application/errors';
+import { ERROR_HEADER_MAX_LENGTH } from '../notifications.constants';
 
 @Injectable()
 export class NotificationConsumer {
@@ -68,7 +69,7 @@ export class NotificationConsumer {
             messageId: envelope.eventId,
             headers: {
               [HEADER_RETRY_COUNT]: nextAttempt,
-              [HEADER_ORIGINAL_ERROR]: error.message.slice(0, 500),
+              [HEADER_ORIGINAL_ERROR]: error.message.slice(0, ERROR_HEADER_MAX_LENGTH),
             },
           },
         );

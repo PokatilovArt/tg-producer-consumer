@@ -7,6 +7,10 @@ import {
 } from '../application/idempotency-store.port';
 import { REDIS_CLIENT } from './redis.provider';
 
+const KEY_PREFIX = 'idem:';
+const PENDING_VALUE = 'pending';
+const DONE_VALUE = 'done';
+
 export interface IdempotencyConfig {
   doneTtlSeconds: number;
   pendingTtlSeconds: number;
@@ -30,7 +34,7 @@ export class RedisIdempotencyStore implements IdempotencyStore, OnModuleDestroy 
   async acquire(key: string): Promise<IdempotencyState> {
     const result = await this.redis.set(
       this.redisKey(key),
-      'pending',
+      PENDING_VALUE,
       'EX',
       this.config.pendingTtlSeconds,
       'NX',
@@ -38,13 +42,13 @@ export class RedisIdempotencyStore implements IdempotencyStore, OnModuleDestroy 
     if (result === 'OK') return 'fresh';
 
     const current = await this.redis.get(this.redisKey(key));
-    return current === 'done' ? 'done' : 'pending';
+    return current === DONE_VALUE ? 'done' : 'pending';
   }
 
   async commit(key: string): Promise<void> {
     await this.redis.set(
       this.redisKey(key),
-      'done',
+      DONE_VALUE,
       'EX',
       this.config.doneTtlSeconds,
     );
@@ -61,6 +65,6 @@ export class RedisIdempotencyStore implements IdempotencyStore, OnModuleDestroy 
   }
 
   private redisKey(key: string): string {
-    return `idem:${key}`;
+    return `${KEY_PREFIX}${key}`;
   }
 }

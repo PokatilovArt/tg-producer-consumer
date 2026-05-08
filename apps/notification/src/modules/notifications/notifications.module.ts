@@ -16,6 +16,7 @@ import {
   TelegramNotificationSender,
 } from './infrastructure/telegram-notification.sender';
 import type { TelegramParseMode } from '@app/contracts';
+import { IDEMPOTENCY_DEFAULTS } from './notifications.constants';
 
 @Module({
   imports: [ConfigModule],
@@ -28,10 +29,16 @@ import type { TelegramParseMode } from '@app/contracts';
       inject: [ConfigService],
       useFactory: (config: ConfigService): IdempotencyConfig => ({
         doneTtlSeconds: Number(
-          config.get<number>('IDEMPOTENCY_TTL_SECONDS', 86_400),
+          config.get<number>(
+            'IDEMPOTENCY_TTL_SECONDS',
+            IDEMPOTENCY_DEFAULTS.doneTtlSeconds,
+          ),
         ),
         pendingTtlSeconds: Number(
-          config.get<number>('IDEMPOTENCY_PENDING_TTL_SECONDS', 60),
+          config.get<number>(
+            'IDEMPOTENCY_PENDING_TTL_SECONDS',
+            IDEMPOTENCY_DEFAULTS.pendingTtlSeconds,
+          ),
         ),
       }),
     },

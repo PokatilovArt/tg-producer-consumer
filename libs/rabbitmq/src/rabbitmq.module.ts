@@ -11,6 +11,7 @@ import {
   NOTIFICATION_ROUTING_KEY,
 } from '@app/contracts';
 import { RABBITMQ_CONFIG, RabbitMQConnectionConfig } from './rabbitmq.config';
+import { RABBITMQ_DEFAULTS } from './rabbitmq.constants';
 
 interface RabbitMQModuleOptions {
   enableConsumer?: boolean;
@@ -27,11 +28,17 @@ export class RabbitMQModule {
           inject: [ConfigService],
           useFactory: (config: ConfigService) => {
             const retryTtlMs = Number(
-              config.get<number>('RABBITMQ_RETRY_TTL_MS', 10_000),
+              config.get<number>(
+                'RABBITMQ_RETRY_TTL_MS',
+                RABBITMQ_DEFAULTS.retryTtlMs,
+              ),
             );
             return {
               uri: config.getOrThrow<string>('RABBITMQ_URL'),
-              connectionInitOptions: { wait: true, timeout: 30_000 },
+              connectionInitOptions: {
+                wait: true,
+                timeout: RABBITMQ_DEFAULTS.connectionInitTimeoutMs,
+              },
               enableControllerDiscovery: options.enableConsumer ?? false,
               exchanges: [
                 { name: NOTIFICATION_EXCHANGE, type: 'topic', options: { durable: true } },
@@ -65,7 +72,11 @@ export class RabbitMQModule {
                 },
               ],
               channels: {
-                default: { prefetchCount: 10, default: true, confirm: true },
+                default: {
+                  prefetchCount: RABBITMQ_DEFAULTS.prefetchCount,
+                  default: true,
+                  confirm: true,
+                },
               },
             };
           },
@@ -80,8 +91,18 @@ export class RabbitMQModule {
             exchange: NOTIFICATION_EXCHANGE,
             queue: NOTIFICATION_QUEUE,
             routingKey: NOTIFICATION_ROUTING_KEY,
-            retryTtlMs: Number(config.get<number>('RABBITMQ_RETRY_TTL_MS', 10_000)),
-            maxRetries: Number(config.get<number>('RABBITMQ_MAX_RETRIES', 5)),
+            retryTtlMs: Number(
+              config.get<number>(
+                'RABBITMQ_RETRY_TTL_MS',
+                RABBITMQ_DEFAULTS.retryTtlMs,
+              ),
+            ),
+            maxRetries: Number(
+              config.get<number>(
+                'RABBITMQ_MAX_RETRIES',
+                RABBITMQ_DEFAULTS.maxRetries,
+              ),
+            ),
           }),
         },
       ],

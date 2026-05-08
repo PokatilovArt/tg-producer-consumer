@@ -5,6 +5,10 @@ import pRetry from 'p-retry';
 import { HEADER_EVENT_ID, NotificationEventEnvelope } from '@app/contracts';
 import { RABBITMQ_CONFIG, RabbitMQConnectionConfig } from '@app/rabbitmq';
 import { EventPublisher } from '../application/event-publisher.port';
+import { PUBLISH_RETRY } from '../events.constants';
+
+const JSON_CONTENT_TYPE = 'application/json';
+const UNCONFIRMED_PUBLISH_ERROR = 'publish unconfirmed by broker';
 
 @Injectable()
 export class RabbitMQEventPublisher implements EventPublisher {
@@ -16,41 +20,39 @@ export class RabbitMQEventPublisher implements EventPublisher {
   ) {}
 
   async publish(envelope: NotificationEventEnvelope): Promise<void> {
-    await pRetry(
-      async () => {
-        // amqp-connection-manager opens the channel in confirm mode (see RabbitMQModule),
-        // so publish() awaits a broker ack and rejects on nack/disconnect.
-        const ok = await this.amqp.publish(
-          this.config.exchange,
-          this.config.routingKey,
-          envelope,
+    await pRetry(() => this.publishOnce(envelope), {
+      retries: PUBLISH_RETRY.retries,
+      minTimeout: PUBLISH_RETRY.minTimeoutMs,
+      maxTimeout: PUBLISH_RETRY.maxTimeoutMs,
+      factor: PUBLISH_RETRY.backoffFactor,
+      onFailedAttempt: (err) => {
+        this.logger.warn(
           {
-            persistent: true,
-            messageId: envelope.eventId,
-            contentType: 'application/json',
-            headers: { [HEADER_EVENT_ID]: envelope.eventId },
+            eventId: envelope.eventId,
+            attempt: err.attemptNumber,
+            err: err.message,
           },
+          'publish attempt failed, retrying',
         );
-        if (!ok) {
-          throw new Error('publish unconfirmed by broker');
-        }
       },
+    });
+  }
+
+  private async publishOnce(envelope: NotificationEventEnvelope): Promise<void> {
+    // Channel is opened in confirm mode (see RabbitMQModule), so this awaits a broker ack.
+    const ok = await this.amqp.publish(
+      this.config.exchange,
+      this.config.routingKey,
+      envelope,
       {
-        retries: 4,
-        minTimeout: 200,
-        maxTimeout: 2_000,
-        factor: 2,
-        onFailedAttempt: (err) => {
-          this.logger.warn(
-            {
-              eventId: envelope.eventId,
-              attempt: err.attemptNumber,
-              err: err.message,
-            },
-            'publish attempt failed, retrying',
-          );
-        },
+        persistent: true,
+        messageId: envelope.eventId,
+        contentType: JSON_CONTENT_TYPE,
+        headers: { [HEADER_EVENT_ID]: envelope.eventId },
       },
     );
+    if (!ok) {
+      throw new Error(UNCONFIRMED_PUBLISH_ERROR);
+    }
   }
 }

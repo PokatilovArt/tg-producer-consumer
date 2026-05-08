@@ -9,6 +9,7 @@ import {
   OutboxRecord,
   OutboxRepository,
 } from '../application/outbox-repository.port';
+import { OUTBOX_ERROR_MAX_LENGTH } from '../outbox.constants';
 import { PG_POOL } from './postgres.provider';
 
 @Injectable()
@@ -102,7 +103,7 @@ export class PostgresOutboxRepository
                last_error = $2,
                next_attempt_at = NOW() + ($3::int || ' milliseconds')::interval
            WHERE id = $1`,
-          [id, error.slice(0, 500), retryDelayMs],
+          [id, error.slice(0, OUTBOX_ERROR_MAX_LENGTH), retryDelayMs],
         );
       },
     };
