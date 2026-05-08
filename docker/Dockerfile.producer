@@ -1,0 +1,19 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --include=dev
+COPY tsconfig*.json nest-cli.json ./
+COPY libs ./libs
+COPY apps/producer ./apps/producer
+RUN npx nest build producer
+
+FROM node:20-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev && npm cache clean --force
+COPY --from=builder /app/dist ./dist
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+USER app
+EXPOSE 3000
+CMD ["node", "dist/apps/producer/main.js"]
