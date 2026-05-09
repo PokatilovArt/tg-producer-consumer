@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsDefined,
   IsEnum,
   IsIn,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -65,6 +67,8 @@ export class CreateNotificationEventDto {
   type!: NotificationEventType;
 
   @ApiProperty({ type: TelegramMessagePayloadDto })
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => TelegramMessagePayloadDto)
   payload!: TelegramMessagePayloadDto;

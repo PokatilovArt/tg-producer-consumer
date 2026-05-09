@@ -23,7 +23,7 @@ export class RabbitMQModule {
     return {
       module: RabbitMQModule,
       imports: [
-        GolevelupRabbitMQModule.forRootAsync(GolevelupRabbitMQModule, {
+        GolevelupRabbitMQModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],
           useFactory: (config: ConfigService) => {

@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Global, Module, ValidationPipe } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
@@ -12,17 +12,24 @@ describe('POST /events (e2e)', () => {
   const enqueue = jest.fn().mockResolvedValue(true);
   const withClaimedBatch = jest.fn();
 
+  @Global()
+  @Module({
+    providers: [
+      {
+        provide: OUTBOX_REPOSITORY,
+        useValue: { enqueue, withClaimedBatch },
+      },
+    ],
+    exports: [OUTBOX_REPOSITORY],
+  })
+  class OutboxStubModule {}
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         LoggerModule.forRoot({ pinoHttp: { level: 'silent' } }),
+        OutboxStubModule,
         EventsModule,
-      ],
-      providers: [
-        {
-          provide: OUTBOX_REPOSITORY,
-          useValue: { enqueue, withClaimedBatch },
-        },
       ],
     }).compile();
 

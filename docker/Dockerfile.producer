@@ -18,4 +18,4 @@ COPY --from=builder /app/db ./db
 RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
 USER app
 EXPOSE 3000
-CMD ["node", "dist/apps/producer/main.js"]
+CMD ["node", "dist/apps/producer/apps/producer/src/main.js"]

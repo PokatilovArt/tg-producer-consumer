@@ -12,8 +12,8 @@
     "start:producer:dev": "nest start producer --watch",
     "start:notification": "nest start notification",
     "start:notification:dev": "nest start notification --watch",
-    "start:producer:prod": "node dist/apps/producer/main.js",
-    "start:notification:prod": "node dist/apps/notification/main.js",
+    "start:producer:prod": "node dist/apps/producer/apps/producer/src/main.js",
+    "start:notification:prod": "node dist/apps/notification/apps/notification/src/main.js",
     "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -51,7 +51,7 @@
     "@nestjs/testing": "^10.3.0",
     "@types/amqplib": "^0.10.4",
     "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.12",
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.11.19",
     "@types/pg": "^8.11.0",
     "@types/supertest": "^6.0.2",
@@ -71,14 +71,25 @@
     "typescript": "^5.3.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["apps/**/*.(t|j)s", "libs/**/*.(t|j)s"],
-    "coveragePathIgnorePatterns": ["/node_modules/", ".module.ts$", "main.ts$"],
+    "collectCoverageFrom": [
+      "apps/**/*.(t|j)s",
+      "libs/**/*.(t|j)s"
+    ],
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      ".module.ts$",
+      "main.ts$"
+    ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {

@@ -15,4 +15,4 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
 USER app
-CMD ["node", "dist/apps/notification/main.js"]
+CMD ["node", "dist/apps/notification/apps/notification/src/main.js"]
