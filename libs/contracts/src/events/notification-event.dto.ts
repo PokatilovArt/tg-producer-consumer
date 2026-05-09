@@ -18,8 +18,10 @@ const PARSE_MODES: TelegramParseMode[] = ['Markdown', 'MarkdownV2', 'HTML'];
 
 export class TelegramMessagePayloadDto {
   @ApiPropertyOptional({
-    description: 'Override default chat id from env. Optional.',
-    example: '123456789',
+    description:
+      'Override TELEGRAM_CHAT_ID from env. Omit to use the default. ' +
+      'Must be a chat id the bot is allowed to write to (the user must have ' +
+      'sent /start to the bot, or the bot must be a member of the group).',
   })
   @IsOptional()
   @IsString()
